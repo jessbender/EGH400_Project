@@ -18,7 +18,7 @@ width_inches, height_inches = plot_width / dpi, plot_height / dpi
 
 # plt.figure(figsize=(width_inches, height_inches), dpi=dpi, facecolor='w', edgecolor='k', frameon=False)
 map = data
-patches = extract_patches_2d(map, patch_size=(100, 100), max_patches=10000)
+patches = extract_patches_2d(map, patch_size=(100, 100), max_patches=20000)
 # Create the 'patches' directory if it doesn't exist
 if not os.path.exists('patches'):
     os.makedirs('patches')
