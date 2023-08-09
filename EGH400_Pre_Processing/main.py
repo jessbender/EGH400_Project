@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from numpy import asarray
 # load the image
-image = Image.open('DepthMaps/MapNoosaArea1-02.png')
+image = Image.open('DepthMaps/MapNoosaArea1-05.png')
 # convert image to numpy array
 data = asarray(image)
 print('Image shape: {}'.format(data.shape))
@@ -41,7 +41,7 @@ for patch in filtered_patches:
 
 print(count)
 # Save the filtered patches
-np.savez('patches/Noosa1_02_patches.npz', *filtered_patches)
+np.savez('patches/Noosa1_05_patches.npz', *filtered_patches)
 
 # Show original image
 # plt.imshow(map)
@@ -49,7 +49,7 @@ np.savez('patches/Noosa1_02_patches.npz', *filtered_patches)
 # plt.tight_layout()
 # plt.show()
 
-load_patches = np.load('patches/Noosa1_02_patches.npz')
+load_patches = np.load('patches/Noosa1_05_patches.npz')
 
 # Show patches in a 10x10 grid
 gridx, gridy = 10, 10
