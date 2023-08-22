@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from numpy import asarray
 # load the image
-image = Image.open('DepthMaps/MapNoosaArea2-02.png')
+image = Image.open('DepthMaps/MapNoosaArea2-01.png')
 # convert image to numpy array
 data = asarray(image)
 print('Image shape: {}'.format(data.shape))
@@ -18,7 +18,7 @@ width_inches, height_inches = plot_width / dpi, plot_height / dpi
 
 # plt.figure(figsize=(width_inches, height_inches), dpi=dpi, facecolor='w', edgecolor='k', frameon=False)
 map = data
-patches = extract_patches_2d(map, patch_size=(100, 100), max_patches=20000)
+patches = extract_patches_2d(map, patch_size=(32, 32), max_patches=20000)
 # Create the 'patches' directory if it doesn't exist
 if not os.path.exists('patches'):
     os.makedirs('patches')
@@ -32,6 +32,7 @@ for patch in patches:
 
     # If white percentage is less than or equal to 25%, add the patch to the filtered list
     if white_percentage <= 0.25:
+        # resized_patch = patch.resize((32, 32))
         filtered_patches.append(patch)
 
 filtered_patches = np.array(filtered_patches)
@@ -41,7 +42,7 @@ for patch in filtered_patches:
 
 print(count)
 # Save the filtered patches
-np.savez('patches/Noosa2_02_patches.npz', *filtered_patches)
+np.savez('patches/Noosa2_01_patches_32x32.npz', *filtered_patches)
 
 # Show original image
 # plt.imshow(map)
@@ -49,7 +50,7 @@ np.savez('patches/Noosa2_02_patches.npz', *filtered_patches)
 # plt.tight_layout()
 # plt.show()
 
-load_patches = np.load('patches/Noosa2_02_patches.npz')
+load_patches = np.load('patches/Noosa2_01_patches_32x32.npz')
 
 # Show patches in a 10x10 grid
 gridx, gridy = 10, 10
@@ -65,3 +66,5 @@ for i in range(gridx):
 
 # Show grid
 plt.show()
+
+# Resize to 32x32 for Barlow Twins -> Tensorflow map/resize functions
