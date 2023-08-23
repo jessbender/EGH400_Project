@@ -27,11 +27,15 @@ SEED = 42
 AUTO = tf.data.AUTOTUNE
 
 # flags to indicate which models to run. You can use these if you want to run just one model.
-APPROACH_1 = True
-APPROACH_2 = True
+# APPROACH_1 = True
+# APPROACH_2 = True
 APPROACH_3 = True
 
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+load_patches = np.load('../EGH400_Pre_Processing/patches/Noosa1_02_patches_32x32.npz', allow_pickle=True)
+patches = []
+for i in load_patches:
+    patches.append(load_patches[i])
 
 x_train = x_train / 255.0
 x_test = x_test / 255.0
@@ -426,6 +430,3 @@ if (APPROACH_3):
     history = bm.fit(ssl_ds, epochs=20, verbose=False)
     plt.plot(history.history["loss"])
     plt.show()
-
-if (APPROACH_3):
-    eval_model(bm.encoder, x_train, y_train, x_test, y_test)
