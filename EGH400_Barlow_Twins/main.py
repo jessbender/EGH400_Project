@@ -14,6 +14,7 @@ import tensorflow_addons as tfa
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
+import math
 
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
@@ -31,12 +32,33 @@ AUTO = tf.data.AUTOTUNE
 # APPROACH_2 = True
 APPROACH_3 = True
 
-(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
-load_patches = np.load('../EGH400_Pre_Processing/patches/Noosa1_02_patches_32x32.npz', allow_pickle=True)
-patches = []
-for i in load_patches:
-    patches.append(load_patches[i])
+# (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+noosa1_02 = np.load('../EGH400_Pre_Processing/patches/Noosa1_02_patches_32x32.npz', allow_pickle=True)
+noosa1_03 = np.load('../EGH400_Pre_Processing/patches/Noosa1_03_patches_32x32.npz', allow_pickle=True)
+noosa1_04 = np.load('../EGH400_Pre_Processing/patches/Noosa1_04_patches_32x32.npz', allow_pickle=True)
+noosa1_05 = np.load('../EGH400_Pre_Processing/patches/Noosa1_05_patches_32x32.npz', allow_pickle=True)
+noosa2_01 = np.load('../EGH400_Pre_Processing/patches/Noosa2_01_patches_32x32.npz', allow_pickle=True)
+noosa2_02 = np.load('../EGH400_Pre_Processing/patches/Noosa2_02_patches_32x32.npz', allow_pickle=True)
 
+patches = []
+for i in noosa1_02:
+    patches.append(noosa1_02[i])
+for i in noosa1_03:
+    patches.append(noosa1_03[i])
+for i in noosa1_04:
+    patches.append(noosa1_04[i])
+for i in noosa1_05:
+    patches.append(noosa1_05[i])
+for i in noosa2_01:
+    patches.append(noosa2_01[i])
+for i in noosa2_02:
+    patches.append(noosa2_02[i])
+
+p = np.stack(patches)
+
+np.random.shuffle(p)
+split = math.ceil(p.shape[0]*0.8)
+x_train, x_test = p[:split, :], p[split:, :]
 x_train = x_train / 255.0
 x_test = x_test / 255.0
 
@@ -46,7 +68,7 @@ def flip_random_crop(x):
     x = tf.image.random_flip_left_right(x)
 
     rand_size = tf.random.uniform(shape=[], minval=int(0.9 * IMAGE_SIZE), maxval=1 * IMAGE_SIZE, dtype=tf.int32)
-    x = tf.image.random_crop(x, (rand_size, rand_size, 3))
+    x = tf.image.random_crop(x, (rand_size, rand_size, 1))
     x = tf.image.resize(x, (IMAGE_SIZE, IMAGE_SIZE))
 
     return x
@@ -68,10 +90,10 @@ def color_jitter(x, strength=[0.4, 0.4, 0.4, 0.1]):
     return x
 
 
-def color_drop(x):
-    x = tf.image.rgb_to_grayscale(x)
-    x = tf.tile(x, [1, 1, 3])
-    return x
+# def color_drop(x):
+#     x = tf.image.rgb_to_grayscale(x)
+#     x = tf.tile(x, [1, 1, 3])
+#     return x
 
 
 def solarize(x):
@@ -96,10 +118,10 @@ def custom_augment(image):
     # transformations (except for random crops) need to be applied
     # randomly to impose translational invariance.
     image = flip_random_crop(image)
-    image = random_apply(color_jitter, image, p=0.8)
+    # image = random_apply(color_jitter, image, p=0.8)
     image = random_apply(blur, image, p=0.2)
     # image = random_apply(solarize, image, p=0.2)
-    image = random_apply(color_drop, image, p=0.2)
+    # image = random_apply(color_drop, image, p=0.2)
     return image
 
 # first dataset
@@ -114,17 +136,17 @@ ssl_ds_two = (ssl_ds_two.shuffle(1024, seed=SEED).map(custom_augment, num_parall
 # applied to each image
 ssl_ds = tf.data.Dataset.zip((ssl_ds_one, ssl_ds_two))
 
-samples = next(iter(ssl_ds))
-plt.figure(figsize=(20, 10))
-for n in range(25):
-    ax = plt.subplot(5, 10, (n + 1)*2 - 1)
-    plt.imshow(samples[0][n].numpy())
-    plt.axis("off")
-
-    ax = plt.subplot(5, 10, (n + 1)*2)
-    plt.imshow(samples[1][n].numpy())
-    plt.axis("off")
-plt.show()
+# samples = next(iter(ssl_ds))
+# plt.figure(figsize=(20, 10))
+# for n in range(25):
+#     ax = plt.subplot(5, 10, (n + 1)*2 - 1)
+#     plt.imshow(samples[0][n].numpy())
+#     plt.axis("off")
+#
+#     ax = plt.subplot(5, 10, (n + 1)*2)
+#     plt.imshow(samples[1][n].numpy())
+#     plt.axis("off")
+# plt.show()
 
 
 def resnet_layer(inputs,
@@ -423,7 +445,7 @@ tf.keras.backend.clear_session()
 
 if (APPROACH_3):
     # create the model and compile it
-    bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 3))))
+    bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
     bm.compile(optimizer=keras.optimizers.Adam(), loss=BarlowLoss(BATCH_SIZE))
 
     # Train this for 20 epochs again
