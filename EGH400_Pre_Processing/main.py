@@ -7,8 +7,8 @@ import cv2
 
 from PIL import Image
 from numpy import asarray
-depth_map = 'MapNoosaArea2-02.png'
-patch_name = 'Noosa2_02_patches_32x32.npz'
+depth_map = 'MapNoosaArea1-02.png'
+patch_name = 'Noosa1_02_patches_150x150_resized.npz'
 # load the image
 image = Image.open('DepthMaps/' + depth_map)
 # convert image to numpy array
@@ -20,8 +20,8 @@ print('Image shape: {}'.format(data.shape))
 image = cv2.imread('DepthMaps/' + depth_map, cv2.IMREAD_GRAYSCALE)
 
 # Define the patch size and step size
-patch_size = (32, 32)
-step_size = 32  # To get non-overlapping patches
+patch_size = (150, 150)
+step_size = 50
 
 patches = []
 image_height, image_width = image.shape
@@ -64,18 +64,36 @@ for patch in patches:
 
 filtered_patches = np.array(filtered_patches)
 count = 0
+resized_patches = []
+scale_down = 32/150
+
 for patch in filtered_patches:
     count = count + 1
+    # Need to fix resize to retain tuple
+    resize = cv2.resize(patch, None, fx=scale_down, fy=scale_down, interpolation=cv2.INTER_CUBIC)
+    resized_patches.append(resize)
 
 print(count)
 
+# create figure
+fig = plt.figure(figsize=(10, 7))
+
+# setting values to rows and column variables
+rows = 1
+columns = 2
+
+# Adds a subplot at the 1st position
+fig.add_subplot(rows, columns, 1)
 plt.imshow(filtered_patches[0])
 plt.axis('off')
-plt.tight_layout()
+# Adds a subplot at the 2nd position
+fig.add_subplot(rows, columns, 2)
+plt.imshow(resized_patches[0])
+plt.axis('off')
 plt.show()
 
 # Save the filtered patches
-np.savez('patches/' + patch_name, *filtered_patches)
+np.savez('patches/' + patch_name, *resized_patches)
 
 # Show original image
 # plt.imshow(map)
