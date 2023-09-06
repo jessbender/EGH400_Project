@@ -56,11 +56,12 @@ for i in noosa2_02:
 
 p = np.stack(patches)
 
-np.random.shuffle(p)
+# np.random.shuffle(p)
 split = math.ceil(p.shape[0]*0.8)
 x_train, x_test = p[:split, :], p[split:, :]
-x_train = x_train / 255.0
-x_test = x_test / 255.0
+
+# x_train = x_train / 255.0
+# x_test = x_test / 255.0
 
 
 def flip_random_crop(x):
@@ -339,7 +340,7 @@ def ssl_model(inputs, filters=[16, 32, 64], num_res_blocks=3, pooling_size=8):
 class BarlowLoss(keras.losses.Loss):
 
     # init the loss with the batch size
-    def __init__(self, batch_size, lambda_amt=5e-3):
+    def __init__(self, batch_size, lambda_amt=5e-5):
         super(BarlowLoss, self).__init__()
         # lambda, used when summing the invariance term and redundancy reduction term
         self.lambda_amt = lambda_amt
@@ -443,12 +444,29 @@ class BarlowModel(keras.Model):
 
 tf.keras.backend.clear_session()
 
+def eval_model(ssl_model, x_train, x_test):
+
+    # t-sne
+    # compute embeddings
+    embeddings = ssl_model.predict(x_test, verbose=False)
+    # pass into t-sne
+    tsne_embeddings = TSNE(random_state=4).fit_transform(embeddings)
+    # plot the result
+    fig = plt.figure(figsize=[20, 10])
+    ax = fig.add_subplot(1, 2, 1)
+    ax.scatter(tsne_embeddings[:, 0], tsne_embeddings[:, 1])
+    plt.show()
+
+
 if (APPROACH_3):
     # create the model and compile it
     bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
     bm.compile(optimizer=keras.optimizers.Adam(), loss=BarlowLoss(BATCH_SIZE))
 
     # Train this for 20 epochs again
-    history = bm.fit(ssl_ds, epochs=20, verbose=False)
+    history = bm.fit(ssl_ds, epochs=4, verbose=True)
     plt.plot(history.history["loss"])
     plt.show()
+
+if (APPROACH_3):
+    eval_model(bm.encoder, x_train, x_test)
