@@ -33,12 +33,12 @@ AUTO = tf.data.AUTOTUNE
 APPROACH_3 = True
 
 # (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
-noosa1_02 = np.load('../EGH400_Pre_Processing/patches/Noosa1_02_patches_32x32.npz', allow_pickle=True)
-noosa1_03 = np.load('../EGH400_Pre_Processing/patches/Noosa1_03_patches_32x32.npz', allow_pickle=True)
-noosa1_04 = np.load('../EGH400_Pre_Processing/patches/Noosa1_04_patches_32x32.npz', allow_pickle=True)
-noosa1_05 = np.load('../EGH400_Pre_Processing/patches/Noosa1_05_patches_32x32.npz', allow_pickle=True)
-noosa2_01 = np.load('../EGH400_Pre_Processing/patches/Noosa2_01_patches_32x32.npz', allow_pickle=True)
-noosa2_02 = np.load('../EGH400_Pre_Processing/patches/Noosa2_02_patches_32x32.npz', allow_pickle=True)
+noosa1_02 = np.load('../EGH400_Pre_Processing/patches/Noosa1_02_patches_150x150_resized.npz', allow_pickle=True)
+noosa1_03 = np.load('../EGH400_Pre_Processing/patches/Noosa1_03_patches_150x150_resized.npz', allow_pickle=True)
+noosa1_04 = np.load('../EGH400_Pre_Processing/patches/Noosa1_04_patches_150x150_resized.npz', allow_pickle=True)
+noosa1_05 = np.load('../EGH400_Pre_Processing/patches/Noosa1_05_patches_150x150_resized.npz', allow_pickle=True)
+noosa2_01 = np.load('../EGH400_Pre_Processing/patches/Noosa2_01_patches_150x150_resized.npz', allow_pickle=True)
+noosa2_02 = np.load('../EGH400_Pre_Processing/patches/Noosa2_02_patches_150x150_resized.npz', allow_pickle=True)
 
 patches = []
 for i in noosa1_02:
@@ -55,6 +55,12 @@ for i in noosa2_02:
     patches.append(noosa2_02[i])
 
 p = np.stack(patches)
+
+# Expand dimensions of each patch to (32, 32, 1)
+expanded_patches = [np.expand_dims(patch, axis=-1) for patch in patches]
+
+# Stack the expanded patches into 'p'
+p = np.stack(expanded_patches)
 
 # np.random.shuffle(p)
 split = math.ceil(p.shape[0]*0.8)
@@ -137,17 +143,17 @@ ssl_ds_two = (ssl_ds_two.shuffle(1024, seed=SEED).map(custom_augment, num_parall
 # applied to each image
 ssl_ds = tf.data.Dataset.zip((ssl_ds_one, ssl_ds_two))
 
-# samples = next(iter(ssl_ds))
-# plt.figure(figsize=(20, 10))
-# for n in range(25):
-#     ax = plt.subplot(5, 10, (n + 1)*2 - 1)
-#     plt.imshow(samples[0][n].numpy())
-#     plt.axis("off")
-#
-#     ax = plt.subplot(5, 10, (n + 1)*2)
-#     plt.imshow(samples[1][n].numpy())
-#     plt.axis("off")
-# plt.show()
+samples = next(iter(ssl_ds))
+plt.figure(figsize=(20, 10))
+for n in range(25):
+    ax = plt.subplot(5, 10, (n + 1)*2 - 1)
+    plt.imshow(samples[0][n].numpy())
+    plt.axis("off")
+
+    ax = plt.subplot(5, 10, (n + 1)*2)
+    plt.imshow(samples[1][n].numpy())
+    plt.axis("off")
+plt.show()
 
 
 def resnet_layer(inputs,
@@ -442,7 +448,18 @@ class BarlowModel(keras.Model):
         self.loss_tracker.update_state(loss)
         return {"loss": self.loss_tracker.result()}
 
+
 tf.keras.backend.clear_session()
+
+
+def plot_tsne(tsne_embeddings, title):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(tsne_embeddings[:, 0], tsne_embeddings[:, 1])
+    plt.title(title)
+    plt.xlabel('TSNE Dimension 1')
+    plt.ylabel('TSNE Dimension 2')
+    plt.show()
+
 
 def eval_model(ssl_model, x_train, x_test):
 
@@ -452,10 +469,7 @@ def eval_model(ssl_model, x_train, x_test):
     # pass into t-sne
     tsne_embeddings = TSNE(random_state=4).fit_transform(embeddings)
     # plot the result
-    fig = plt.figure(figsize=[20, 10])
-    ax = fig.add_subplot(1, 2, 1)
-    ax.scatter(tsne_embeddings[:, 0], tsne_embeddings[:, 1])
-    plt.show()
+    plot_tsne(tsne_embeddings, "TSNE Visualisation")
 
 
 if (APPROACH_3):
@@ -464,8 +478,21 @@ if (APPROACH_3):
     bm.compile(optimizer=keras.optimizers.Adam(), loss=BarlowLoss(BATCH_SIZE))
 
     # Train this for 20 epochs again
-    history = bm.fit(ssl_ds, epochs=4, verbose=True)
+    ep = 4
+    history = bm.fit(ssl_ds, epochs=ep, verbose=True)
     plt.plot(history.history["loss"])
+    plt.title('Training Loss over ' + str(ep) + ' Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+
+    # Adding text annotation for the final loss value
+    final_loss = history.history["loss"][-1]
+    plt.annotate(f'Final Loss: {final_loss:.4f}',
+                 xy=(ep - 1, final_loss),
+                 xytext=(ep - 1, final_loss + 0.1),
+                 ha='center',
+                 arrowprops=dict(arrowstyle='->'))
+
     plt.show()
 
 if (APPROACH_3):
