@@ -32,38 +32,32 @@ AUTO = tf.data.AUTOTUNE
 # APPROACH_2 = True
 APPROACH_3 = True
 
-# (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
-noosa1_02 = np.load('../EGH400_Pre_Processing/patches/Noosa1_02_patches_150x150_resized.npz', allow_pickle=True)
-noosa1_03 = np.load('../EGH400_Pre_Processing/patches/Noosa1_03_patches_150x150_resized.npz', allow_pickle=True)
-noosa1_04 = np.load('../EGH400_Pre_Processing/patches/Noosa1_04_patches_150x150_resized.npz', allow_pickle=True)
-noosa1_05 = np.load('../EGH400_Pre_Processing/patches/Noosa1_05_patches_150x150_resized.npz', allow_pickle=True)
-noosa2_01 = np.load('../EGH400_Pre_Processing/patches/Noosa2_01_patches_150x150_resized.npz', allow_pickle=True)
-noosa2_02 = np.load('../EGH400_Pre_Processing/patches/Noosa2_02_patches_150x150_resized.npz', allow_pickle=True)
 
-patches = []
-for i in noosa1_02:
-    patches.append(noosa1_02[i])
-for i in noosa1_03:
-    patches.append(noosa1_03[i])
-for i in noosa1_04:
-    patches.append(noosa1_04[i])
-for i in noosa1_05:
-    patches.append(noosa1_05[i])
-for i in noosa2_01:
-    patches.append(noosa2_01[i])
-for i in noosa2_02:
-    patches.append(noosa2_02[i])
+# Load data
+def load_data(file_paths):
+    patches = []
+    for file_path in file_paths:
+        data = np.load(file_path, allow_pickle=True)
+        for i in data:
+            patches.append(data[i])
+    return np.stack(patches)
 
+
+file_paths = [
+    '../EGH400_Pre_Processing/patches/Noosa1_02_patches_150x150_resized.npz',
+    '../EGH400_Pre_Processing/patches/Noosa1_03_patches_150x150_resized.npz',
+    '../EGH400_Pre_Processing/patches/Noosa1_04_patches_150x150_resized.npz',
+    '../EGH400_Pre_Processing/patches/Noosa1_05_patches_150x150_resized.npz',
+    '../EGH400_Pre_Processing/patches/Noosa2_01_patches_150x150_resized.npz',
+    '../EGH400_Pre_Processing/patches/Noosa2_02_patches_150x150_resized.npz'
+]
+
+patches = load_data(file_paths)
+patches = [np.expand_dims(patch, axis=-1) for patch in patches]
 p = np.stack(patches)
 
-# Expand dimensions of each patch to (32, 32, 1)
-expanded_patches = [np.expand_dims(patch, axis=-1) for patch in patches]
-
-# Stack the expanded patches into 'p'
-p = np.stack(expanded_patches)
-
 # np.random.shuffle(p)
-split = math.ceil(p.shape[0]*0.8)
+split = math.ceil(p.shape[0]*0.75)
 x_train, x_test = p[:split, :], p[split:, :]
 
 # x_train = x_train / 255.0
@@ -472,13 +466,13 @@ def eval_model(ssl_model, x_train, x_test):
     plot_tsne(tsne_embeddings, "TSNE Visualisation")
 
 
-if (APPROACH_3):
+if APPROACH_3:
     # create the model and compile it
     bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
     bm.compile(optimizer=keras.optimizers.Adam(), loss=BarlowLoss(BATCH_SIZE))
 
     # Train this for 20 epochs again
-    ep = 4
+    ep = 20
     history = bm.fit(ssl_ds, epochs=ep, verbose=True)
     plt.plot(history.history["loss"])
     plt.title('Training Loss over ' + str(ep) + ' Epochs')
@@ -495,5 +489,6 @@ if (APPROACH_3):
 
     plt.show()
 
-if (APPROACH_3):
+
+if APPROACH_3:
     eval_model(bm.encoder, x_train, x_test)
