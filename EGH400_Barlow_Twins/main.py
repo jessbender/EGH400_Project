@@ -1,23 +1,28 @@
+# Code adapted from the Barlow Twins example CAB420 author Simon Denman
+
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-
-from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Activation
-from tensorflow.keras.layers import AveragePooling2D, Input, Flatten
-from tensorflow.keras import activations
-from tensorflow.keras.regularizers import l2
-
 import tensorflow_addons as tfa
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
 import math
 
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.callbacks import ModelCheckpoint
+
+from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Activation
+from tensorflow.keras.layers import AveragePooling2D, Input, Flatten
+from tensorflow.keras.models import load_model
+from tensorflow.keras import activations
+from tensorflow.keras.regularizers import l2
+
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
+from sklearn.metrics.pairwise import cosine_similarity
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Batch size of dataset
 BATCH_SIZE = 32
@@ -43,14 +48,13 @@ def load_data(file_paths):
     return np.stack(patches)
 
 
-file_paths = [
-    '../EGH400_Pre_Processing/patches/Noosa1_02_patches_150x150_resized.npz',
-    '../EGH400_Pre_Processing/patches/Noosa1_03_patches_150x150_resized.npz',
-    '../EGH400_Pre_Processing/patches/Noosa1_04_patches_150x150_resized.npz',
-    '../EGH400_Pre_Processing/patches/Noosa1_05_patches_150x150_resized.npz',
-    '../EGH400_Pre_Processing/patches/Noosa2_01_patches_150x150_resized.npz',
-    '../EGH400_Pre_Processing/patches/Noosa2_02_patches_150x150_resized.npz'
-]
+directory = '../EGH400_Pre_Processing/patches/'
+pattern = 'patches_reduced_white.npz'
+file_paths = []
+
+for filename in os.listdir(directory):
+    if filename.endswith(pattern):
+        file_paths.append(directory + filename)
 
 patches = load_data(file_paths)
 patches = [np.expand_dims(patch, axis=-1) for patch in patches]
@@ -75,25 +79,19 @@ def flip_random_crop(x):
     return x
 
 
-def color_jitter(x, strength=[0.4, 0.4, 0.4, 0.1]):
-    x = tf.image.random_brightness(x, max_delta=0.8 * strength[0])
-    x = tf.image.random_contrast(
-        x, lower=1 - 0.8 * strength[1], upper=1 + 0.8 * strength[1]
-    )
-    x = tf.image.random_saturation(
-        x, lower=1 - 0.8 * strength[2], upper=1 + 0.8 * strength[2]
-    )
-    x = tf.image.random_hue(x, max_delta=0.2 * strength[3])
-
-    # Affine transformations can disturb the natural range of
-    # RGB images, hence this is needed.
-    x = tf.clip_by_value(x, 0.0, 1.0)
-    return x
-
-
-# def color_drop(x):
-#     x = tf.image.rgb_to_grayscale(x)
-#     x = tf.tile(x, [1, 1, 3])
+# def colour_jitter(x, strength=[0.4, 0.4, 0.4, 0.1]):
+#     x = tf.image.random_brightness(x, max_delta=0.8 * strength[0])
+#     x = tf.image.random_contrast(
+#         x, lower=1 - 0.8 * strength[1], upper=1 + 0.8 * strength[1]
+#     )
+#     x = tf.image.random_saturation(
+#         x, lower=1 - 0.8 * strength[2], upper=1 + 0.8 * strength[2]
+#     )
+#     x = tf.image.random_hue(x, max_delta=0.2 * strength[3])
+#
+#     # Affine transformations can disturb the natural range of
+#     # RGB images, hence this is needed.
+#     x = tf.clip_by_value(x, 0.0, 1.0)
 #     return x
 
 
@@ -119,11 +117,11 @@ def custom_augment(image):
     # transformations (except for random crops) need to be applied
     # randomly to impose translational invariance.
     image = flip_random_crop(image)
-    # image = random_apply(color_jitter, image, p=0.8)
+    # image = random_apply(colour_jitter, image, p=0.8)
     image = random_apply(blur, image, p=0.2)
-    # image = random_apply(solarize, image, p=0.2)
-    # image = random_apply(color_drop, image, p=0.2)
+    image = random_apply(solarize, image, p=0.2)
     return image
+
 
 # first dataset
 ssl_ds_one = tf.data.Dataset.from_tensor_slices(x_train)
@@ -147,7 +145,9 @@ for n in range(25):
     ax = plt.subplot(5, 10, (n + 1)*2)
     plt.imshow(samples[1][n].numpy())
     plt.axis("off")
+plt.savefig('Sample_Patches.png')
 plt.show()
+
 
 
 def resnet_layer(inputs,
@@ -340,7 +340,7 @@ def ssl_model(inputs, filters=[16, 32, 64], num_res_blocks=3, pooling_size=8):
 class BarlowLoss(keras.losses.Loss):
 
     # init the loss with the batch size
-    def __init__(self, batch_size, lambda_amt=5e-5):
+    def __init__(self, batch_size, lambda_amt=5e-3):
         super(BarlowLoss, self).__init__()
         # lambda, used when summing the invariance term and redundancy reduction term
         self.lambda_amt = lambda_amt
@@ -452,6 +452,8 @@ def plot_tsne(tsne_embeddings, title):
     plt.title(title)
     plt.xlabel('TSNE Dimension 1')
     plt.ylabel('TSNE Dimension 2')
+
+    plt.savefig('TSNE.png')
     plt.show()
 
 
@@ -466,14 +468,49 @@ def eval_model(ssl_model, x_train, x_test):
     plot_tsne(tsne_embeddings, "TSNE Visualisation")
 
 
+# Function to save model weights
+def save_model_weights(model, filepath):
+    model.save_weights(filepath)
+    print(f"Model weights saved to {filepath}")
+
+
+class SafeModelCheckpoint(ModelCheckpoint):
+    def __init__(self, filepath, checkpoint_callback):
+        super(SafeModelCheckpoint, self).__init__(filepath=filepath)
+        self.model_checkpoint_callback = checkpoint_callback
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Check if the 'val_loss' key is in the logs and the value is not NaN
+        if 'val_loss' in logs and not tf.math.is_nan(logs['val_loss']):
+            self.model_checkpoint_callback.on_epoch_end(epoch, logs)
+
+
 if APPROACH_3:
+    # Define the checkpoint callback
+    checkpoint_filepath = 'model_checkpoints/'
+    model_checkpoint_callback = ModelCheckpoint(
+        filepath=checkpoint_filepath,
+        mode='min',  # Minimize validation loss
+        save_weights_only=True,  # Save only model weights
+        verbose=1  # Display messages about the checkpoint saving
+    )
+    # Create a SafeModelCheckpoint instance
+    safe_model_checkpoint = SafeModelCheckpoint(checkpoint_filepath, model_checkpoint_callback)
+
+    # Adam - Adaptive Moment Estimation
+    # SGD - Stochastic Gradient Descent
     # create the model and compile it
     bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
-    bm.compile(optimizer=keras.optimizers.Adam(), loss=BarlowLoss(BATCH_SIZE))
+    learning_rate = 1e-04
+    print('Learning Rate: ' + str(learning_rate))
+    optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
+    bm.compile(optimizer=optimizer, loss=BarlowLoss(BATCH_SIZE))  # change Adam() to SGD() slower?
 
-    # Train this for 20 epochs again
-    ep = 20
-    history = bm.fit(ssl_ds, epochs=ep, verbose=True)
+    ep = 2
+    print('Epochs: ' + str(ep))
+
+    history = bm.fit(ssl_ds, epochs=ep, verbose=True, callbacks=[safe_model_checkpoint])
+
     plt.plot(history.history["loss"])
     plt.title('Training Loss over ' + str(ep) + ' Epochs')
     plt.xlabel('Epoch')
@@ -486,9 +523,39 @@ if APPROACH_3:
                  xytext=(ep - 1, final_loss + 0.1),
                  ha='center',
                  arrowprops=dict(arrowstyle='->'))
-
+    plt.savefig('Loss.png')
     plt.show()
 
+    training_path = f'training/LR {learning_rate} EP {ep}'
+    if not os.path.exists(training_path):
+        os.makedirs(training_path)
 
-if APPROACH_3:
+    # Save the weights after training
+    save_model_weights(bm, training_path + '/model_weights.h5')
+
     eval_model(bm.encoder, x_train, x_test)
+
+    embeddings = bm.encoder.predict(x_test)
+
+    # Convert the embeddings to a NumPy array so they are comparable to the patches array
+    embeddings_array = np.array(embeddings)
+
+    # Assuming you want to select the first 10 patches and their embeddings
+    selected_patches = patches[:10]
+    selected_embeddings = embeddings_array[:10]
+
+    # Compute cosine similarities between the selected embeddings and all embeddings
+    similarities = cosine_similarity(selected_embeddings, embeddings_array)
+
+    # Set the diagonal of the similarities matrix to a low value (e.g., -1) to avoid self-similarity
+    np.fill_diagonal(similarities, -1)
+
+    # Find the indices of patches with highest similarity for each selected patch
+    most_similar_indices = np.argmax(similarities, axis=1)
+
+    # Print the most similar patches for each selected patch
+    for i, patch in enumerate(selected_patches):
+        similar_patch_index = most_similar_indices[i]
+        similar_patch = patches[similar_patch_index]
+        print(f"Selected Patch {i} is similar to Patch {similar_patch_index}")
+
