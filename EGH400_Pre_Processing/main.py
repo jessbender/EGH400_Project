@@ -7,14 +7,14 @@ import cv2
 
 from PIL import Image
 from numpy import asarray
-depth_map = 'MapNoosaArea1-02.png'
-patch_name = 'Noosa1_02_patches_150x150_resized.npz'
+map_number = '2-02'
+depth_map = f'MapNoosaArea{map_number}.png'
+patch_name = f'Noosa{map_number}_patches_reduced_white.npz'
 # load the image
 image = Image.open('DepthMaps/' + depth_map)
 # convert image to numpy array
 data = asarray(image)
 print('Image shape: {}'.format(data.shape))
-
 
 # Load black and white image
 image = cv2.imread('DepthMaps/' + depth_map, cv2.IMREAD_GRAYSCALE)
@@ -46,7 +46,8 @@ patch_array = np.array(patches)
 # # plt.figure(figsize=(width_inches, height_inches), dpi=dpi, facecolor='w', edgecolor='k', frameon=False)
 # map = data
 # patches = extract_patches_2d(map, patch_size=(32, 32), max_patches=20000)
-# # Create the 'patches' directory if it doesn't exist
+
+# Create the 'patches' directory if it doesn't exist
 if not os.path.exists('patches'):
     os.makedirs('patches')
 
@@ -57,8 +58,8 @@ for patch in patches:
     total_pixels = patch.shape[0] * patch.shape[1]
     white_percentage = white_pixel_count / total_pixels
 
-    # If white percentage is less than or equal to 25%, add the patch to the filtered list
-    if white_percentage <= 0.25:
+    # If white percentage is less than or equal to 10%, add the patch to the filtered list
+    if white_percentage <= 0.10:
         # resized_patch = patch.resize((32, 32))
         filtered_patches.append(patch)
 
