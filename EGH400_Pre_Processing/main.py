@@ -1,3 +1,4 @@
+import math
 import os
 
 from sklearn.feature_extraction.image import extract_patches_2d
@@ -7,116 +8,164 @@ import cv2
 
 from PIL import Image
 from numpy import asarray
-map_number = '2-02'
-depth_map = f'MapNoosaArea{map_number}.png'
-patch_name = f'Noosa{map_number}_patches_reduced_white.npz'
+
 # load the image
-image = Image.open('DepthMaps/' + depth_map)
+# image = Image.open('A0/' + depth_map)
 # convert image to numpy array
-data = asarray(image)
-print('Image shape: {}'.format(data.shape))
+# data = asarray(image)
+# print('Image shape: {}'.format(data.shape))
 
+
+def get_depth_map(map_num):
+    depth_map = f'MapNoosaArea{map_num}.png'
+    return depth_map
+
+
+def patch_extraction(im, chosen_size):
+    patches = []
+    image_height, image_width = im.shape
+    print(f'image h: {image_height}, w: {image_width}')
+
+    # Define the patch size and step size
+    patch_size = (chosen_size, chosen_size)
+    step_size = chosen_size
+
+    index = 0
+    patch_index = []
+    for y in range(0, image_height - patch_size[1] + 1, step_size):
+        for x in range(0, image_width - patch_size[0] + 1, step_size):
+            index += 1
+            patch = im[y:y+patch_size[1], x:x+patch_size[0]]
+            # Reshape the patch to [32, 32, 1] and add it to the list
+            patch = patch.reshape(patch_size[1], patch_size[0], 1)
+            patches.append(patch)
+            patch_index.append((index, map_number))
+
+    # Create the 'patches' directory if it doesn't exist
+    if not os.path.exists('patches'):
+        os.makedirs('patches')
+
+    filtered_patches = []
+    filt_index = 0
+    for patch in patches:
+
+        # Calculate the percentage of white pixels in the patch
+        white_pixel_count = np.sum(patch == [255])  # Assuming white is represented as [255, 255, 255]
+        total_pixels = patch.shape[0] * patch.shape[1]
+        white_percentage = white_pixel_count / total_pixels
+
+        # If white percentage is less than or equal to 10%, add the patch to the filtered list
+        if white_percentage <= 0.10:
+            filt_index += 1
+            filtered_patches.append(patch)
+        else:
+            patch_index[filt_index] = (0, map_number)
+            filt_index += 1
+
+    count = 0
+    for i in patch_index:
+        if not i == (0, map_number):
+            count += 1
+
+    print(f'patch index: {len(patch_index)}, patch values: {count}')
+    filtered_patches = np.array(filtered_patches)
+    count = 0
+    resized_patches = []
+    scale_down = 32/chosen_size
+
+    for patch in filtered_patches:
+        count = count + 1
+        # Need to fix resize to retain tuple
+        resize = cv2.resize(patch, None, fx=scale_down, fy=scale_down, interpolation=cv2.INTER_CUBIC)
+
+        resized_patches.append(resize)
+
+    print(f'No of patches: {count}')
+
+    # # create figure
+    # fig = plt.figure(figsize=(10, 7))
+    #
+    # # setting values to rows and column variables
+    # rows = 1
+    # columns = 2
+    #
+    # # Adds a subplot at the 1st position
+    # fig.add_subplot(rows, columns, 1)
+    # plt.imshow(filtered_patches[0])
+    # plt.title(f'{chosen_size}x{chosen_size}')
+    # plt.axis('off')
+    # # Adds a subplot at the 2nd position
+    # fig.add_subplot(rows, columns, 2)
+    # plt.imshow(resized_patches[0])
+    # plt.title('32x32')
+    # plt.axis('off')
+    # plt.show()
+
+    # Save the filtered patches
+    patch_file = 'patches/fromA0/' + patch_name
+    np.savez(patch_file, *resized_patches)
+
+    # Show original image
+    # Show the original image
+    fig, ax = plt.subplots(figsize=(8, 10))
+    ax.imshow(im)
+
+    # Create grid lines with the specified grid cell size
+    x_ticks = range(0, image_width - chosen_size, chosen_size)
+    y_ticks = range(0, image_height - chosen_size, chosen_size)
+
+    # Set the ticks based on the grid cell size
+    ax.set_xticks(x_ticks)
+    ax.set_yticks(y_ticks)
+
+    # Rotate x-axis labels for better readability
+    ax.set_xticklabels(x_ticks, rotation=45)
+
+    # Calculate the coordinates for the center of each grid cell
+    x_centers = [x + chosen_size / 2 for x in x_ticks]
+    y_centers = [y + chosen_size / 2 for y in y_ticks]
+
+    # Draw a red dot in the center of each grid cell - eventually for clustering visualisation
+    i = 0
+    for y in y_centers:
+        for x in x_centers:
+            if not patch_index[i] == (0, map_number):
+                ax.plot(x, y, 'ro', markersize=2)
+            i += 1
+
+
+    # Add grid lines
+    ax.grid()
+    plt.title('Depth Map Patch Extraction')
+    plt.xlabel('Pixels')
+    plt.ylabel('Pixels')
+    plt.savefig(f'A0/MapNoosaArea{map_number}_w_Grid.png')
+    np.save(f'A0/MapNoosaArea{map_number}_Patch_Index', patch_index)
+    # plt.show()
+
+    # load_patches = np.load(patch_file)
+    #
+    # # Show patches in a 10x10 grid
+    # gridx, gridy = 10, 10
+    # fig, ax = plt.subplots(gridx, gridy, figsize=patch_size, dpi=400, facecolor='w', edgecolor='k',
+    #                        frameon=False)
+    #
+    # for i in range(gridx):
+    #     for j in range(gridy):
+    #         im = load_patches[('arr_%d' % (10 * i + j,))]
+    #         # print(np.amin(im), np.amax(im))
+    #         ax[i, j].axis('off')
+    #         ax[i, j].imshow(im)
+    #
+    # # Show grid
+    # plt.savefig(f'patches/fromA0/MapNoosaArea{map_number}_sample.png')
+    # plt.show()
+
+
+map_number = ['1-02', '1-03', '1-04', '1-05', '2-01', '2-02']
+map_number = map_number[5]
 # Load black and white image
-image = cv2.imread('DepthMaps/' + depth_map, cv2.IMREAD_GRAYSCALE)
+image = cv2.imread('A0/' + get_depth_map(map_number), cv2.IMREAD_GRAYSCALE)
+patch_name = f'Noosa{map_number}_patches_from_A0_320x320.npz'
 
-# Define the patch size and step size
-patch_size = (150, 150)
-step_size = 50
-
-patches = []
-image_height, image_width = image.shape
-
-for y in range(0, image_height - patch_size[1] + 1, step_size):
-    for x in range(0, image_width - patch_size[0] + 1, step_size):
-        patch = image[y:y+patch_size[1], x:x+patch_size[0]]
-        # Reshape the patch to [32, 32, 1] and add it to the list
-        patch = patch.reshape(patch_size[1], patch_size[0], 1)
-        patches.append(patch)
-
-# Stack all the patches into a single ndarray
-patch_array = np.array(patches)
-
-
-# The shape of 'patch_array' will be [Number of patches, 32, 32, 1]
-#
-# dpi = 400
-# plot_width, plot_height = 3307, 4677
-# width_inches, height_inches = plot_width / dpi, plot_height / dpi
-#
-# # plt.figure(figsize=(width_inches, height_inches), dpi=dpi, facecolor='w', edgecolor='k', frameon=False)
-# map = data
-# patches = extract_patches_2d(map, patch_size=(32, 32), max_patches=20000)
-
-# Create the 'patches' directory if it doesn't exist
-if not os.path.exists('patches'):
-    os.makedirs('patches')
-
-filtered_patches = []
-for patch in patches:
-    # Calculate the percentage of white pixels in the patch
-    white_pixel_count = np.sum(patch == [255])  # Assuming white is represented as [255, 255, 255]
-    total_pixels = patch.shape[0] * patch.shape[1]
-    white_percentage = white_pixel_count / total_pixels
-
-    # If white percentage is less than or equal to 10%, add the patch to the filtered list
-    if white_percentage <= 0.10:
-        # resized_patch = patch.resize((32, 32))
-        filtered_patches.append(patch)
-
-filtered_patches = np.array(filtered_patches)
-count = 0
-resized_patches = []
-scale_down = 32/150
-
-for patch in filtered_patches:
-    count = count + 1
-    # Need to fix resize to retain tuple
-    resize = cv2.resize(patch, None, fx=scale_down, fy=scale_down, interpolation=cv2.INTER_CUBIC)
-    resized_patches.append(resize)
-
-print(count)
-
-# create figure
-fig = plt.figure(figsize=(10, 7))
-
-# setting values to rows and column variables
-rows = 1
-columns = 2
-
-# Adds a subplot at the 1st position
-fig.add_subplot(rows, columns, 1)
-plt.imshow(filtered_patches[0])
-plt.axis('off')
-# Adds a subplot at the 2nd position
-fig.add_subplot(rows, columns, 2)
-plt.imshow(resized_patches[0])
-plt.axis('off')
-plt.show()
-
-# Save the filtered patches
-np.savez('patches/' + patch_name, *resized_patches)
-
-# Show original image
-# plt.imshow(map)
-# plt.axis('off')
-# plt.tight_layout()
-# plt.show()
-
-# load_patches = np.load('patches/Noosa2_01_patches_32x32.npz')
-
-# Show patches in a 10x10 grid
-# gridx, gridy = 10, 10
-# fig, ax = plt.subplots(gridx, gridy, figsize=patch_size, dpi=400, facecolor='w', edgecolor='k',
-#                        frameon=False)
-#
-# for i in range(gridx):
-#     for j in range(gridy):
-#         im = load_patches[('arr_%d' % (10 * i + j,))]
-#         # print(np.amin(im), np.amax(im))
-#         ax[i, j].axis('off')
-#         ax[i, j].imshow(im)
-#
-# # Show grid
-# plt.show()
-
-# Resize to 32x32 for Barlow Twins -> Tensorflow map/resize functions
+patch_extraction(image, 320)
