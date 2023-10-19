@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import datetime
 import math
+import shutil
 
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -14,15 +15,16 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Activation
 from tensorflow.keras.layers import AveragePooling2D, Input, Flatten
-from tensorflow.keras.models import load_model
 from tensorflow.keras import activations
 from tensorflow.keras.regularizers import l2
 
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import DBSCAN
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 
 # Batch size of dataset
 BATCH_SIZE = 32
@@ -32,6 +34,9 @@ IMAGE_SIZE = 32
 SEED = 42
 AUTO = tf.data.AUTOTUNE
 
+lr = 0.0001
+epochs = 5
+
 # flags to indicate which models to run. You can use these if you want to run just one model.
 # APPROACH_1 = True
 # APPROACH_2 = True
@@ -40,16 +45,21 @@ APPROACH_3 = True
 
 # Load data
 def load_data(file_paths):
+    total_count = 0
     patches = []
     for file_path in file_paths:
         data = np.load(file_path, allow_pickle=True)
         for i in data:
             patches.append(data[i])
+        count = int(i.split('_')[1])
+        total_count = total_count + count
+    print(f'The total number of patches is: {total_count}')
+
     return np.stack(patches)
 
 
-directory = '../EGH400_Pre_Processing/patches/'
-pattern = 'patches_reduced_white.npz'
+directory = '../EGH400_Pre_Processing/patches/fromA0/'
+pattern = 'from_A0_320x320.npz'
 file_paths = []
 
 for filename in os.listdir(directory):
@@ -58,6 +68,7 @@ for filename in os.listdir(directory):
 
 patches = load_data(file_paths)
 patches = [np.expand_dims(patch, axis=-1) for patch in patches]
+
 p = np.stack(patches)
 
 # np.random.shuffle(p)
@@ -146,8 +157,8 @@ for n in range(25):
     plt.imshow(samples[1][n].numpy())
     plt.axis("off")
 plt.savefig('Sample_Patches.png')
-plt.show()
-
+# plt.show()
+plt.close()
 
 
 def resnet_layer(inputs,
@@ -340,7 +351,7 @@ def ssl_model(inputs, filters=[16, 32, 64], num_res_blocks=3, pooling_size=8):
 class BarlowLoss(keras.losses.Loss):
 
     # init the loss with the batch size
-    def __init__(self, batch_size, lambda_amt=5e-3):
+    def __init__(self, batch_size, lambda_amt=5e-4):
         super(BarlowLoss, self).__init__()
         # lambda, used when summing the invariance term and redundancy reduction term
         self.lambda_amt = lambda_amt
@@ -446,19 +457,32 @@ class BarlowModel(keras.Model):
 tf.keras.backend.clear_session()
 
 
-def plot_tsne(tsne_embeddings, title):
+def plot_tsne(tsne_embed, title):
     plt.figure(figsize=(10, 6))
-    plt.scatter(tsne_embeddings[:, 0], tsne_embeddings[:, 1])
+    plt.scatter(tsne_embed[:, 0], tsne_embed[:, 1])
     plt.title(title)
     plt.xlabel('TSNE Dimension 1')
     plt.ylabel('TSNE Dimension 2')
 
-    plt.savefig('TSNE.png')
-    plt.show()
+    plt.savefig(f'{title}.png')
+    # plt.show()
+    plt.close()
 
+
+# 'embeddings' containing the output embeddings from the SSL model
+# 'eps' is the maximum distance between two samples for one to be considered as in the neighborhood of the other.
+# 'min_samples' is the number of samples (or total weight) in a neighborhood for a point to be considered as a core
+# point.
+def plot_cluster_tsne(tsne_embeddings, labels):
+    plt.scatter(tsne_embeddings[:, 0], tsne_embeddings[:, 1], c=labels, cmap='rainbow')
+    plt.title("t-SNE Visualisation of Clusters")
+    plt.xlabel('TSNE Dimension 1')
+    plt.ylabel('TSNE Dimension 2')
+    plt.savefig('TSNE_Clustered')
+    # plt.show()
+    plt.close()
 
 def eval_model(ssl_model, x_train, x_test):
-
     # t-sne
     # compute embeddings
     embeddings = ssl_model.predict(x_test, verbose=False)
@@ -469,9 +493,21 @@ def eval_model(ssl_model, x_train, x_test):
 
 
 # Function to save model weights
-def save_model_weights(model, filepath):
-    model.save_weights(filepath)
-    print(f"Model weights saved to {filepath}")
+def save_model(model, filepath):
+    model.save(filepath)
+    print(f"Model saved to {filepath}")
+
+
+# Function to check if model weights exist
+def model_exist(lr, epochs):
+    model_dir = f'training/LR_{lr}_EP_{epochs}_0'
+    return os.path.exists(os.path.join(model_dir, 'saved_model.h5'))
+
+
+# def load_model(filepath):
+#     loaded_model = tf.keras.saving.load_model(filepath)
+#     print(f"Model loaded from {filepath}")
+#     return loaded_model
 
 
 class SafeModelCheckpoint(ModelCheckpoint):
@@ -485,6 +521,19 @@ class SafeModelCheckpoint(ModelCheckpoint):
             self.model_checkpoint_callback.on_epoch_end(epoch, logs)
 
 
+# if model_weights_exist(lr, epochs):
+#     # Model weights exist, load the model
+#     model_dir = f'training/LR_{lr}_EP_{epochs}_0'
+#     # ssl_model = ssl_model(keras.Input((32, 32, 1)))
+#     bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
+#     bm.build(input_shape=(None, 32, 32, 1))
+#     # bm.load_weights(os.path.join(model_dir, 'model_weights.h5'))
+#     bm_loaded = tf.keras.models.lsoad_model(os.path.join(model_dir, 'model_weights'))
+#     # eval_model(bm_loaded.encoder, x_train, x_test)
+#     embeddings = bm_loaded.encoder.predict(x_test)
+#
+# else:
+# Model weights do not exist, train the model
 if APPROACH_3:
     # Define the checkpoint callback
     checkpoint_filepath = 'model_checkpoints/'
@@ -501,14 +550,15 @@ if APPROACH_3:
     # SGD - Stochastic Gradient Descent
     # create the model and compile it
     bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
-    learning_rate = 1e-04
+    learning_rate = lr
     print('Learning Rate: ' + str(learning_rate))
     optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
     bm.compile(optimizer=optimizer, loss=BarlowLoss(BATCH_SIZE))  # change Adam() to SGD() slower?
 
-    ep = 2
+    ep = epochs
     print('Epochs: ' + str(ep))
 
+    # Train the model
     history = bm.fit(ssl_ds, epochs=ep, verbose=True, callbacks=[safe_model_checkpoint])
 
     plt.plot(history.history["loss"])
@@ -524,25 +574,66 @@ if APPROACH_3:
                  ha='center',
                  arrowprops=dict(arrowstyle='->'))
     plt.savefig('Loss.png')
-    plt.show()
+    # plt.show()
+    plt.close()
 
-    training_path = f'training/LR {learning_rate} EP {ep}'
-    if not os.path.exists(training_path):
+    num = 0
+    training_path = f'training/LR_{learning_rate}_EP_{ep}_{num}'
+
+    # base_directory = 'training/'  # Change this to the base directory you want to search in
+    #
+    # # Initialize an empty list to store existing directories
+    # existing_directories = []
+    #
+    # # List all items (files and directories) in the base directory
+    # items = os.listdir(base_directory)
+    #
+    # # Iterate through the items to identify directories
+    # for item in items:
+    #     item_path = os.path.join(base_directory, item)  # Get the full path of the item
+    #     if os.path.isdir(item_path):  # Check if the item is a directory
+    #         existing_directories.append(item)  # Add the directory name to the list
+    #
+    # # Extract numbers from the directory names and find the highest number
+    # highest_number = 0
+    # for directory in existing_directories:
+    #     try:
+    #         # Extract the number part of the directory name
+    #         num = int(directory.split('_')[-1])
+    #         highest_number = max(highest_number, num)
+    #     except ValueError:
+    #         # Handle cases where the directory name doesn't end with a number
+    #         pass
+
+    if not os.path.exists(f'{training_path}'):
         os.makedirs(training_path)
+        num += 1
+    else:
+        training_path = training_path + '_temp'
+        os.makedirs(f'{training_path}')
 
     # Save the weights after training
-    save_model_weights(bm, training_path + '/model_weights.h5')
+    # save_model(bm, training_path + '/model_weights')
+    # saved_model = load_model(training_path + '/model_weights')
 
     eval_model(bm.encoder, x_train, x_test)
 
     embeddings = bm.encoder.predict(x_test)
 
+    dbscan = DBSCAN(eps=0.5, min_samples=5)
+    labels = dbscan.fit_predict(embeddings)
+    tsne = TSNE(n_components=2)
+    tsne_embeddings = tsne.fit_transform(embeddings)
+    plot_cluster_tsne(tsne_embeddings, labels)
+
     # Convert the embeddings to a NumPy array so they are comparable to the patches array
     embeddings_array = np.array(embeddings)
+    labels_array = np.array(labels)
 
     # Assuming you want to select the first 10 patches and their embeddings
     selected_patches = patches[:10]
     selected_embeddings = embeddings_array[:10]
+    selected_labels = labels_array[:10]
 
     # Compute cosine similarities between the selected embeddings and all embeddings
     similarities = cosine_similarity(selected_embeddings, embeddings_array)
@@ -552,10 +643,55 @@ if APPROACH_3:
 
     # Find the indices of patches with highest similarity for each selected patch
     most_similar_indices = np.argmax(similarities, axis=1)
+    selected_and_similar_patches = []
 
     # Print the most similar patches for each selected patch
     for i, patch in enumerate(selected_patches):
         similar_patch_index = most_similar_indices[i]
         similar_patch = patches[similar_patch_index]
-        print(f"Selected Patch {i} is similar to Patch {similar_patch_index}")
 
+        print(f"Selected Patch {i} (label {labels_array[i]}) is similar to Patch {similar_patch_index} (label {labels_array[similar_patch_index]})")
+
+        # Append the selected patch and its most similar counterpart to the array
+        selected_and_similar_patches.append((patch, similar_patch))
+
+    # Convert the list to a NumPy array
+    selected_and_similar_patches = np.array(selected_and_similar_patches)
+
+    # Save the array to a file
+    np.save(f"{training_path}/selected_and_similar_patches.npy", selected_and_similar_patches)
+
+    patch_sim = f'{training_path}/PatchSim'
+    if not os.path.exists(patch_sim):
+        os.makedirs(patch_sim)
+
+    # Create a plot to visualize the selected patches and their most similar counterparts
+    plt.figure(figsize=(12, 8))
+
+    for i, (patch, similar_patch_index) in enumerate(zip(selected_patches, most_similar_indices)):
+        similar_patch = patches[similar_patch_index]
+
+        # Create a new figure for each pair of patches
+        plt.figure()
+
+        # Plot the selected patch
+        plt.subplot(1, 2, 1)
+        plt.imshow(patch.squeeze(), cmap='gray')
+        plt.title(f"Selected Patch {i}")
+
+        # Plot the most similar patch
+        plt.subplot(1, 2, 2)
+        plt.imshow(similar_patch.squeeze(), cmap='gray')
+        plt.title(f"Similar Patch {similar_patch_index}")
+
+        # Save the figure as an image (change the filename as needed)
+        plt.savefig(f'{patch_sim}/patch_pair_{i}.png')
+
+        # Close the current figure to release resources
+        plt.close()
+
+        images = [f for f in os.listdir() if '.png' in f.lower()]
+
+        for image in images:
+            new_path = f'{training_path}/' + image
+            shutil.move(image, new_path)
