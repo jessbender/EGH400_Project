@@ -5,25 +5,21 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 import numpy as np
 import matplotlib.pyplot as plt
-import datetime
 import math
-import shutil
 import cv2
+import keras
+from keras import layers
+from keras.callbacks import ModelCheckpoint
 
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.callbacks import ModelCheckpoint
-
-from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, Activation
-from tensorflow.keras.layers import AveragePooling2D, Input, Flatten
-from tensorflow.keras import activations
-from tensorflow.keras.regularizers import l2
+from keras.layers import Conv2D, BatchNormalization, Activation
+from keras.layers import AveragePooling2D, Flatten
+from keras.regularizers import l2
 
 from sklearn.manifold import TSNE
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.cluster import DBSCAN
+# from sklearn.cluster import DBSCAN
 from sklearn.mixture import GaussianMixture
+from matplotlib.lines import Line2D
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -40,55 +36,21 @@ lr = 1e-05
 epochs = 15
 lambda_val = 5e-05
 
-# flags to indicate which models to run. You can use these if you want to run just one model.
-# APPROACH_1 = True
-# APPROACH_2 = True
-APPROACH_3 = True
-
 
 # Load data
-def load_data(file_paths):
+def load_data(fp):
     total_count = 0
-    patches = []
-    for file_path in file_paths:
+    load_patches = []
+    i = 0
+    for file_path in fp:
         data = np.load(file_path, allow_pickle=True)
         for i in data:
-            patches.append(data[i])
+            load_patches.append(data[i])
         count = int(i.split('_')[1])
         total_count = total_count + count
     print(f'The total number of patches is: {total_count}')
 
-    return np.stack(patches)
-
-
-# directory = '../EGH400_Pre_Processing/patches/fromA0/'
-# pattern = 'from_A0_320x320.npz'
-
-directory = '../EGH400_Pre_Processing/patches/'
-pattern = 'reduced_white.npz'
-file_paths = []
-
-for filename in os.listdir(directory):
-    if filename.endswith(pattern):
-        file_paths.append(directory + filename)
-
-patches = load_data(file_paths)
-patches = [np.expand_dims(patch, axis=-1) for patch in patches]
-
-p = np.stack(patches)
-
-# Map Testing
-map_file_path = ['../EGH400_Pre_Processing/patches/fromA0/Noosa2-02_patches_from_A0_full_map.npz']
-map_patches = load_data(map_file_path)
-map_patches = [np.expand_dims(patch, axis=-1) for patch in map_patches]
-map_patches = np.stack(map_patches)
-
-# np.random.shuffle(p)
-split = math.ceil(p.shape[0]*0.75)
-x_train, x_test = p[:split, :], p[split:, :]
-
-# x_train = x_train / 255.0
-# x_test = x_test / 255.0
+    return np.stack(load_patches)
 
 
 def flip_random_crop(x):
@@ -100,22 +62,6 @@ def flip_random_crop(x):
     x = tf.image.resize(x, (IMAGE_SIZE, IMAGE_SIZE))
 
     return x
-
-
-# def colour_jitter(x, strength=[0.4, 0.4, 0.4, 0.1]):
-#     x = tf.image.random_brightness(x, max_delta=0.8 * strength[0])
-#     x = tf.image.random_contrast(
-#         x, lower=1 - 0.8 * strength[1], upper=1 + 0.8 * strength[1]
-#     )
-#     x = tf.image.random_saturation(
-#         x, lower=1 - 0.8 * strength[2], upper=1 + 0.8 * strength[2]
-#     )
-#     x = tf.image.random_hue(x, max_delta=0.2 * strength[3])
-#
-#     # Affine transformations can disturb the natural range of
-#     # RGB images, hence this is needed.
-#     x = tf.clip_by_value(x, 0.0, 1.0)
-#     return x
 
 
 def solarize(x):
@@ -140,18 +86,13 @@ def custom_augment(image):
     # transformations (except for random crops) need to be applied
     # randomly to impose translational invariance.
     image = flip_random_crop(image)
-    # image = random_apply(colour_jitter, image, p=0.8)
     image = random_apply(blur, image, p=0.2)
     image = random_apply(solarize, image, p=0.2)
     return image
 
 
 def figure_aug(image):
-    im = []
-    im.append(np.array(image))
-    im.append(np.array(flip_random_crop(image)))
-    im.append(np.array(blur(image)))
-    im.append(np.array(solarize(image)))
+    im = [np.array(image), np.array(flip_random_crop(image)), np.array(blur(image)), np.array(solarize(image))]
     label = ['Original Patch', 'Flip and Random Crop', 'Blur', 'Solarize']
     plt.figure(figsize=(20, 10))
     for i in range(4):
@@ -162,34 +103,6 @@ def figure_aug(image):
     plt.savefig('Example_Augmentation.png')
     # plt.show()
     plt.close()
-
-
-figure_aug(x_train[0])
-# first dataset
-ssl_ds_one = tf.data.Dataset.from_tensor_slices(x_train)
-ssl_ds_one = (ssl_ds_one.shuffle(1024, seed=SEED).map(custom_augment, num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
-
-# second dataset - identical settings to the first
-ssl_ds_two = tf.data.Dataset.from_tensor_slices(x_train)
-ssl_ds_two = (ssl_ds_two.shuffle(1024, seed=SEED).map(custom_augment, num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
-
-# combine both the datasets, meaning that when we draw a sample we'll get image pairs, but with different augmentations
-# applied to each image
-ssl_ds = tf.data.Dataset.zip((ssl_ds_one, ssl_ds_two))
-#
-# samples = next(iter(ssl_ds))
-# plt.figure(figsize=(20, 10))
-# for n in range(25):
-#     ax = plt.subplot(5, 10, (n + 1)*2 - 1)
-#     plt.imshow(samples[0][n].numpy())
-#     plt.axis("off")
-#
-#     ax = plt.subplot(5, 10, (n + 1)*2)
-#     plt.imshow(samples[1][n].numpy())
-#     plt.axis("off")
-# plt.savefig('Sample_Patches.png')
-# # plt.show()
-# plt.close()
 
 
 def resnet_layer(inputs,
@@ -557,39 +470,12 @@ class SafeModelCheckpoint(ModelCheckpoint):
         if 'val_loss' in logs and not tf.math.is_nan(logs['val_loss']):
             self.model_checkpoint_callback.on_epoch_end(epoch, logs)
 
-num = 0
-training_path = f'train/LR_{lr}/LR_{lr}_EP_{epochs}' # initial
-base_directory = f'train/LR_{lr}'
-
-# Initialize an empty list to store existing directories
-existing_directories = []
-
-# List all items (files and directories) in the base directory
-items = os.listdir(base_directory)
-
-# Iterate through the items to identify directories
-for item in items:
-    item_path = os.path.join(base_directory, item)  # Get the full path of the item
-    if os.path.isdir(item_path):  # Check if the item is a directory
-        existing_directories.append(item)  # Add the directory name to the list
-
-# Extract numbers from the directory names and find the highest number
-highest_number = 0
-for directory in existing_directories:
-    try:
-        # Extract the number part of the directory name
-        num = int(directory.split('_')[4])
-        highest_number = max(highest_number, num)
-    except ValueError:
-        # Handle cases where the directory name doesn't end with a number
-        pass
-
 
 def evaluation(model):
-    # eval_model(model, x_train, x_test)
-    #
-    # embeddings = model.predict(x_test)
-    embeddings = model.predict(map_patches)
+    eval_model(model, x_train, x_test)
+
+    embeddings = model.predict(x_test)
+    # embeddings = model.predict(map_patches)
 
     # dbscan = DBSCAN(eps=0.5, min_samples=5)
     # labels = dbscan.fit_predict(embeddings)
@@ -607,10 +493,7 @@ def evaluation(model):
     embeddings_array = np.array(embeddings)
     labels_array = np.array(labels)
 
-    map_plot('2-02', labels_array)
-
-    # Find the indices where the label matches the target_label
-    indices = np.where(labels_array == 1)[0]
+    # map_plot('2-02', labels_array)
 
     # Select the first 10 embeddings with the matching label
     # selected_embeddings = [embeddings_array[i] for i in indices[:10]]
@@ -618,7 +501,6 @@ def evaluation(model):
     # Assuming you want to select the first 10 patches and their embeddings
     selected_patches = patches[:10]
     selected_embeddings = embeddings_array[:10]
-    selected_labels = labels_array[:10]
 
     # Compute cosine similarities between the selected embeddings and all embeddings
     similarities = cosine_similarity(selected_embeddings, embeddings_array)
@@ -732,17 +614,22 @@ def map_plot(map_number, labels_arr):
     for y in y_centers:
         for x in x_centers:
             if labels_arr[i] == 0:
-                ax.plot(x, y, 'ro', markersize=2) # low points
+                ax.plot(x, y, marker='o', color='b', markersize=2) # low points
             elif labels_arr[i] == 1:
-                ax.plot(x, y, 'bo', markersize=2) # white
+                ax.plot(x, y, marker='o', color='lawngreen', markersize=2) # white
             elif labels_arr[i] == 2:
-                ax.plot(x, y, 'go', markersize=2) # high points
+                ax.plot(x, y, marker='o', color='r', markersize=2) # high points
             elif labels_arr[i] == 3:
-                ax.plot(x, y, 'mo', markersize=2) # middle
+                ax.plot(x, y, marker='o', color='yellow', markersize=2) # middle
             i += 1
 
+    legend_elements = [Line2D([0], [0], marker='o', color='w', label='n = 0', markerfacecolor='b', markersize=10),
+                       Line2D([0], [0], marker='o', color='w', label='n = 1', markerfacecolor='lawngreen', markersize=10),
+                       Line2D([0], [0], marker='o', color='w', label='n = 2', markerfacecolor='r', markersize=10),
+                       Line2D([0], [0], marker='o', color='w', label='n = 3', markerfacecolor='yellow', markersize=10)]
     # Add grid lines
     ax.grid()
+    ax.legend(handles=legend_elements, loc='upper right')
     plt.title('Depth Map Patch Extraction')
     plt.xlabel('Pixels')
     plt.ylabel('Pixels')
@@ -750,15 +637,98 @@ def map_plot(map_number, labels_arr):
 
 
 # ---------------------------------MAIN------------------------------------------------
+# TODO: Import the patches from EGH400 Pre-Processing directory
+# directory = '../EGH400_Pre_Processing/patches/fromA0/'
+# pattern = 'from_A0_320x320.npz'
 
-model_dir = f'train/LR_{lr}/LR_{lr}_EP_{epochs}_10/bm_saved'
+directory = '../EGH400_Pre_Processing/patches/'
+pattern = 'reduced_white.npz'
+file_paths = []
+
+for filename in os.listdir(directory):
+    if filename.endswith(pattern):
+        file_paths.append(directory + filename)
+
+patches = load_data(file_paths)
+patches = [np.expand_dims(patch, axis=-1) for patch in patches]
+
+p = np.stack(patches)
+
+# # Map Testing
+# map_file_path = ['../EGH400_Pre_Processing/patches/fromA0/Noosa2-02_patches_from_A0_full_map.npz']
+# map_patches = load_data(map_file_path)
+# map_patches = [np.expand_dims(patch, axis=-1) for patch in map_patches]
+# map_patches = np.stack(map_patches)
+
+# np.random.shuffle(p)
+split = math.ceil(p.shape[0]*0.75)
+x_train, x_test = p[:split, :], p[split:, :]
+
+# Example Augmentation figure for report
+figure_aug(x_train[0])
+
+# first dataset
+ssl_ds_one = tf.data.Dataset.from_tensor_slices(x_train)
+ssl_ds_one = (ssl_ds_one.shuffle(1024, seed=SEED).map(custom_augment, num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
+
+# second dataset - identical settings to the first
+ssl_ds_two = tf.data.Dataset.from_tensor_slices(x_train)
+ssl_ds_two = (ssl_ds_two.shuffle(1024, seed=SEED).map(custom_augment, num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
+
+# combine both the datasets, meaning that when we draw a sample we'll get image pairs, but with different augmentations
+# applied to each image
+ssl_ds = tf.data.Dataset.zip((ssl_ds_one, ssl_ds_two))
+
+# Plot of a sample of patches for report
+# samples = next(iter(ssl_ds))
+# plt.figure(figsize=(20, 10))
+# for n in range(25):
+#     ax = plt.subplot(5, 10, (n + 1)*2 - 1)
+#     plt.imshow(samples[0][n].numpy())
+#     plt.axis("off")
+#
+#     ax = plt.subplot(5, 10, (n + 1)*2)
+#     plt.imshow(samples[1][n].numpy())
+#     plt.axis("off")
+# plt.savefig('Sample_Patches.png')
+# # plt.show()
+# plt.close()
+
+# TODO: Check what directories have already been trained, create new directory based on this
+training_path = f'train/LR_{lr}/LR_{lr}_EP_{epochs}'
+base_directory = f'train/LR_{lr}'
+
+# Initialize an empty list to store existing directories
+existing_directories = []
+
+# List all items (files and directories) in the base directory
+items = os.listdir(base_directory)
+
+# Iterate through the items to identify directories
+for item in items:
+    item_path = os.path.join(base_directory, item)  # Get the full path of the item
+    if os.path.isdir(item_path):  # Check if the item is a directory
+        existing_directories.append(item)  # Add the directory name to the list
+
+# Extract numbers from the directory names and find the highest number
+highest_number = 0
+for directory in existing_directories:
+    try:
+        # Extract the number part of the directory name
+        num = int(directory.split('_')[4])
+        highest_number = max(highest_number, num)
+    except ValueError:
+        # Handle cases where the directory name doesn't end with a number
+        pass
+
+# TODO: Load existing model if there is one, otherwise train a new model
+model_dir = f'train/LR_{lr}/LR_{lr}_EP_{epochs}_11/bm_saved'
 if model_exist(model_dir):
     # Model exist, load the model
     saved_model = load_model(model_dir)
     evaluation(saved_model.encoder)
 else:
-    # Model weights do not exist, train the model
-    # if APPROACH_3:
+    # Model does not exist, train the model
     if not os.path.exists(f'{training_path}_0'):
         training_path = f'{training_path}_0'
         os.makedirs(f'{training_path}')
@@ -766,7 +736,9 @@ else:
         training_path = f'{training_path}_{highest_number + 1}'
         os.makedirs(f'{training_path}')
 
+    # Save hyperparameters to a .txt file
     save_parameters(training_path, lr, BATCH_SIZE, epochs, lambda_val)
+
     # Define the checkpoint callback
     checkpoint_filepath = 'model_checkpoints/'
     model_checkpoint_callback = ModelCheckpoint(
@@ -778,13 +750,13 @@ else:
     # Create a SafeModelCheckpoint instance
     safe_model_checkpoint = SafeModelCheckpoint(checkpoint_filepath, model_checkpoint_callback)
 
-    # Adam - Adaptive Moment Estimation
-    # SGD - Stochastic Gradient Descent
-    # create the model and compile it
-    bm = BarlowModel(encoder=ssl_model(keras.Input((32, 32, 1))))
+    # Create the model and compile it
+    input_shape = patches[0].shape
+    bm = BarlowModel(encoder=ssl_model(keras.Input(input_shape)))
+
     learning_rate = lr
     print('Learning Rate: ' + str(learning_rate))
-    optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     bm.compile(optimizer=optimizer, loss=BarlowLoss(BATCH_SIZE))  # change Adam() to SGD() slower?
 
     ep = epochs
