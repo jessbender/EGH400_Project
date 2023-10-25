@@ -12,10 +12,7 @@ This repository contains code for implementing the Barlow Twins self-supervised 
 - [Introduction](#introduction)
 - [Requirements](#requirements)
 - [Usage](#usage)
-- [Training](#training)
-- [Evaluation](#evaluation)
 - [Results](#results)
-- [License](#license)
 
 ## Introduction
 
