@@ -41,9 +41,3 @@ Before using the code, make sure you have the following dependencies installed:
 ## Results
 
 The results of training and evaluation will be saved in the project directory. This includes saved model, loss plots, and visualisations. You can adjust the save locations and naming in the code.
-
-This code is provided under the [MIT License](LICENSE.md). You are free to use, modify, and distribute it according to the terms of the license.
-
----
-
-You can modify this README to include more specific details about your project, such as the dataset used, expected results, and any additional usage instructions.
