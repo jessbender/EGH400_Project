@@ -1,0 +1,4 @@
+learning_rate=1e-05
+batch_size=10
+epochs=20
+lambda=5e-05
