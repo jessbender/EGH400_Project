@@ -1,27 +1,27 @@
 # Code adapted from the Barlow Twins example CAB420 author Simon Denman
-
 import os
+import warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+warnings.filterwarnings('ignore')
 import tensorflow as tf
 import tensorflow_addons as tfa
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-import cv2
 import keras
+import cv2
+import shutil
+
 from keras import layers
 from keras.callbacks import ModelCheckpoint
-
 from keras.layers import Conv2D, BatchNormalization, Activation
 from keras.layers import AveragePooling2D, Flatten
 from keras.regularizers import l2
-
 from sklearn.manifold import TSNE
 from sklearn.metrics.pairwise import cosine_similarity
 # from sklearn.cluster import DBSCAN
 from sklearn.mixture import GaussianMixture
 from matplotlib.lines import Line2D
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 # Batch size of dataset
@@ -32,8 +32,9 @@ IMAGE_SIZE = 32
 SEED = 42
 AUTO = tf.data.AUTOTUNE
 
+# Default values
 lr = 1e-05
-epochs = 15
+epochs = 20
 lambda_val = 5e-05
 
 
@@ -155,7 +156,7 @@ def resnet_v1(inputs, filters, num_res_blocks, pool_size):
 
     Stacks of 2 x (3 x 3) Conv2D-BN-ReLU
     Last ReLU is after the shortcut connection.
-    At the beginning of each stage, the feature map size is halved (downsampled)
+    At the beginning of each stage, the feature map size is halved (down-sampled)
     by a convolutional layer with strides=2, while the number of filters is
     doubled. Within each stage, the layers have the same number filters and the
     same number of filters.
@@ -177,7 +178,7 @@ def resnet_v1(inputs, filters, num_res_blocks, pool_size):
         for res_block in range(num_res_blocks):
             strides = 1
             if stack > 0 and res_block == 0:  # first layer but not first stack
-                strides = 2  # downsample
+                strides = 2  # down-sample
             y = resnet_layer(inputs=x,
                              num_filters=filters,
                              strides=strides)
@@ -211,7 +212,7 @@ def resnet_v2(inputs, filters, num_res_blocks, pool_size):
     bottleneck layer
     First shortcut connection per layer is 1 x 1 Conv2D.
     Second and onwards shortcut connection is identity.
-    At the beginning of each stage, the feature map size is halved (downsampled)
+    At the beginning of each stage, the feature map size is halved (down-sampled)
     by a convolutional layer with strides=2, while the number of filter maps is
     doubled. Within each stage, the layers have the same number filters and the
     same filter map sizes.
@@ -245,7 +246,7 @@ def resnet_v2(inputs, filters, num_res_blocks, pool_size):
             else:
                 num_filters_out = num_filters_in * 2
                 if res_block == 0:  # first layer but not first stage
-                    strides = 2  # downsample
+                    strides = 2  # down-sample
 
             # bottleneck residual unit
             y = resnet_layer(inputs=x,
@@ -273,7 +274,7 @@ def resnet_v2(inputs, filters, num_res_blocks, pool_size):
                                  batch_normalization=False)
             x = keras.layers.add([x, y])
 
-        num_filters_in = num_filters_out
+        # num_filters_in = num_filters_out
 
     # Add classifier on top.
     # v2 has BN-ReLU before Pooling
@@ -284,7 +285,10 @@ def resnet_v2(inputs, filters, num_res_blocks, pool_size):
     return y
 
 
-def ssl_model(inputs, filters=[16, 32, 64], num_res_blocks=3, pooling_size=8):
+def ssl_model(inputs):
+    filters = [16, 32, 64]
+    num_res_blocks = 3
+    pooling_size = 8
     embedding = resnet_v2(inputs, filters, num_res_blocks, pooling_size)
 
     return keras.Model(inputs, embedding, name='ssl_model')
@@ -292,7 +296,7 @@ def ssl_model(inputs, filters=[16, 32, 64], num_res_blocks=3, pooling_size=8):
 
 # Barlow Loss Class
 # The Barlow loss is based on the cross-correlation matrix, subclass of keras.losses.Loss
-class BarlowLoss(keras.losses.Loss):
+class BarlowLoss(tf.keras.losses.Loss):
 
     # init the loss with the batch size
     def __init__(self, batch_size, lambda_amt=lambda_val):
@@ -307,11 +311,12 @@ class BarlowLoss(keras.losses.Loss):
     #  - A tf.tensor that represents the cross correlation matrix
     # outputs
     #  - A tf.tensor which represents the cross correlation matrix with its diagonals as zeros.
-    def get_off_diag(self, c: tf.Tensor) -> tf.Tensor:
+    @staticmethod
+    def get_off_diag(c: tf.Tensor) -> tf.Tensor:
         zero_diag = tf.zeros(c.shape[-1])
         return tf.linalg.set_diag(c, zero_diag)
 
-    # Get the barlow loss. Seek to have 1's on the diagonal, and 0's everywhere else. Loss fuction
+    # Get the barlow loss. Seek to have 1's on the diagonal, and 0's everywhere else. Loss function
     # is composed on two terms, the invariance term and the redundancy reduction term:
     #  - invariance term subtracts the values on the diagonal from 1, and squares the result
     #    term is minimised if the diagonal values are 1
@@ -334,13 +339,14 @@ class BarlowLoss(keras.losses.Loss):
         return loss
 
     # normalise a set of predictions
-    def normalize(self, output: tf.Tensor) -> tf.Tensor:
+    @staticmethod
+    def normalize(output: tf.Tensor) -> tf.Tensor:
         return (output - tf.reduce_mean(output, axis=0)) / tf.math.reduce_std(
             output, axis=0)
 
     # create a cross-correlation matrix from two sets of predictions, each containing
     # predictions of length embedding_size. Function transposes the first of predictions,
-    # and multplies these by the second to obtain a tensor of size
+    # and multiplies these by the second to obtain a tensor of size
     # embedding_size x embedding_size. The result is divided by the batch size.
     # inputs
     #  - A normalized version of the first set of embeddings
@@ -373,8 +379,7 @@ class BarlowModel(keras.Model):
         super(BarlowModel, self).__init__()
 
         self.encoder = encoder
-        self.loss_tracker = keras.metrics.Mean(name="loss")
-
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
     @property
     def metrics(self):
@@ -428,16 +433,6 @@ def plot_cluster_tsne(tsne_embeddings, labels):
     plt.close()
 
 
-def eval_model(ssl_model, x_train, x_test):
-    # t-sne
-    # compute embeddings
-    embeddings = ssl_model.predict(x_test, verbose=False)
-    # pass into t-sne
-    tsne_embeddings = TSNE(random_state=4).fit_transform(embeddings)
-    # plot the result
-    plot_tsne(tsne_embeddings, "TSNE Visualisation")
-
-
 # Function to save model weights
 def save_model(model, filepath):
     model.encoder.save(filepath)
@@ -445,8 +440,8 @@ def save_model(model, filepath):
 
 
 # Function to check if model weights exist
-def model_exist(model_dir):
-    if os.path.exists(model_dir):
+def model_exist(model_directory):
+    if os.path.exists(model_directory):
         model_ex = True
     else:
         model_ex = False
@@ -472,8 +467,6 @@ class SafeModelCheckpoint(ModelCheckpoint):
 
 
 def evaluation(model):
-    eval_model(model, x_train, x_test)
-
     embeddings = model.predict(x_test)
     # embeddings = model.predict(map_patches)
 
@@ -487,16 +480,14 @@ def evaluation(model):
 
     tsne = TSNE(n_components=2)
     tsne_embeddings = tsne.fit_transform(embeddings)
+    plot_tsne(tsne_embeddings, "TSNE Visualisation")
     plot_cluster_tsne(tsne_embeddings, labels)
 
-    # Convert the embeddings to a NumPy array so they are comparable to the patches array
+    # Convert the embeddings to a NumPy array, so they are comparable to the patches array
     embeddings_array = np.array(embeddings)
     labels_array = np.array(labels)
 
     # map_plot('2-02', labels_array)
-
-    # Select the first 10 embeddings with the matching label
-    # selected_embeddings = [embeddings_array[i] for i in indices[:10]]
 
     # Assuming you want to select the first 10 patches and their embeddings
     selected_patches = patches[:10]
@@ -508,7 +499,7 @@ def evaluation(model):
     # Set the diagonal of the similarities matrix to a low value (e.g., -1) to avoid self-similarity
     np.fill_diagonal(similarities, -1)
 
-    # Find the indices of patches with highest similarity for each selected patch
+    # Find the indices of patches with the highest similarity for each selected patch
     most_similar_indices = np.argmax(similarities, axis=1)
     selected_and_similar_patches = []
 
@@ -518,7 +509,8 @@ def evaluation(model):
         similar_patch = patches[similar_patch_index]
 
         print(
-            f"Selected Patch {i} (label {labels_array[i]}) is similar to Patch {similar_patch_index} (label {labels_array[similar_patch_index]})")
+            f"Selected Patch {i} (label {labels_array[i]}) is similar to Patch {similar_patch_index} "
+            f"(label {labels_array[similar_patch_index]})")
 
         # Append the selected patch and its most similar counterpart to the array
         selected_and_similar_patches.append((patch, similar_patch))
@@ -527,11 +519,11 @@ def evaluation(model):
     selected_and_similar_patches = np.array(selected_and_similar_patches)
 
     # Save the array to a file
-    # np.save(f"{training_path}/selected_and_similar_patches.npy", selected_and_similar_patches)
-    np.save(f"train/selected_and_similar_patches.npy", selected_and_similar_patches)
+    np.save(f"{training_path}/selected_and_similar_patches.npy", selected_and_similar_patches)
+    # np.save(f"train/selected_and_similar_patches.npy", selected_and_similar_patches)
 
-    # patch_sim = f'{training_path}/PatchSim'
-    patch_sim = f'train/PatchSim'
+    patch_sim = f'{training_path}/PatchSim'
+    # patch_sim = f'train/PatchSim'
     if not os.path.exists(patch_sim):
         os.makedirs(patch_sim)
 
@@ -560,11 +552,11 @@ def evaluation(model):
         # Close the current figure to release resources
         plt.close()
 
-        # images = [f for f in os.listdir() if '.png' in f.lower()]
-        #
-        # for image in images:
-        #     new_path = f'{training_path}/' + image
-        #     shutil.move(image, new_path)
+        images = [f for f in os.listdir() if '.png' in f.lower()]
+
+        for image in images:
+            new_path = f'{training_path}/' + image
+            shutil.move(image, new_path)
 
 
 def save_parameters(training_filepath, learn_rate, batch_size, epoch, lambda_value):
@@ -614,17 +606,18 @@ def map_plot(map_number, labels_arr):
     for y in y_centers:
         for x in x_centers:
             if labels_arr[i] == 0:
-                ax.plot(x, y, marker='o', color='b', markersize=2) # low points
+                ax.plot(x, y, marker='o', color='b', markersize=2)  # low points
             elif labels_arr[i] == 1:
-                ax.plot(x, y, marker='o', color='lawngreen', markersize=2) # white
+                ax.plot(x, y, marker='o', color='lawngreen', markersize=2)  # white
             elif labels_arr[i] == 2:
-                ax.plot(x, y, marker='o', color='r', markersize=2) # high points
+                ax.plot(x, y, marker='o', color='r', markersize=2)  # high points
             elif labels_arr[i] == 3:
-                ax.plot(x, y, marker='o', color='yellow', markersize=2) # middle
+                ax.plot(x, y, marker='o', color='yellow', markersize=2)  # middle
             i += 1
 
     legend_elements = [Line2D([0], [0], marker='o', color='w', label='n = 0', markerfacecolor='b', markersize=10),
-                       Line2D([0], [0], marker='o', color='w', label='n = 1', markerfacecolor='lawngreen', markersize=10),
+                       Line2D([0], [0], marker='o', color='w', label='n = 1', markerfacecolor='lawngreen',
+                              markersize=10),
                        Line2D([0], [0], marker='o', color='w', label='n = 2', markerfacecolor='r', markersize=10),
                        Line2D([0], [0], marker='o', color='w', label='n = 3', markerfacecolor='yellow', markersize=10)]
     # Add grid lines
@@ -652,7 +645,7 @@ for filename in os.listdir(directory):
 patches = load_data(file_paths)
 patches = [np.expand_dims(patch, axis=-1) for patch in patches]
 
-p = np.stack(patches)
+patch_stack = np.stack(patches)
 
 # # Map Testing
 # map_file_path = ['../EGH400_Pre_Processing/patches/fromA0/Noosa2-02_patches_from_A0_full_map.npz']
@@ -660,20 +653,21 @@ p = np.stack(patches)
 # map_patches = [np.expand_dims(patch, axis=-1) for patch in map_patches]
 # map_patches = np.stack(map_patches)
 
-# np.random.shuffle(p)
-split = math.ceil(p.shape[0]*0.75)
-x_train, x_test = p[:split, :], p[split:, :]
+split = math.ceil(patch_stack.shape[0]*0.75)
+x_train, x_test = patch_stack[:split, :], patch_stack[split:, :]
 
 # Example Augmentation figure for report
 figure_aug(x_train[0])
 
 # first dataset
 ssl_ds_one = tf.data.Dataset.from_tensor_slices(x_train)
-ssl_ds_one = (ssl_ds_one.shuffle(1024, seed=SEED).map(custom_augment, num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
+ssl_ds_one = (ssl_ds_one.shuffle(1024, seed=SEED).map(custom_augment,
+                                                      num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
 
 # second dataset - identical settings to the first
 ssl_ds_two = tf.data.Dataset.from_tensor_slices(x_train)
-ssl_ds_two = (ssl_ds_two.shuffle(1024, seed=SEED).map(custom_augment, num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
+ssl_ds_two = (ssl_ds_two.shuffle(1024, seed=SEED).map(custom_augment,
+                                                      num_parallel_calls=AUTO).batch(BATCH_SIZE).prefetch(AUTO))
 
 # combine both the datasets, meaning that when we draw a sample we'll get image pairs, but with different augmentations
 # applied to each image
@@ -722,7 +716,7 @@ for directory in existing_directories:
         pass
 
 # TODO: Load existing model if there is one, otherwise train a new model
-model_dir = f'train/LR_{lr}/LR_{lr}_EP_{epochs}_11/bm_saved'
+model_dir = f'train/LR_{lr}/LR_{lr}_EP_{epochs}_1/bm_saved'
 if model_exist(model_dir):
     # Model exist, load the model
     saved_model = load_model(model_dir)
