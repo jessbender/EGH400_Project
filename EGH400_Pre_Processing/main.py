@@ -1,19 +1,7 @@
-import math
 import os
-
-from sklearn.feature_extraction.image import extract_patches_2d
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
-
-from PIL import Image
-from numpy import asarray
-
-# load the image
-# image = Image.open('A0/' + depth_map)
-# convert image to numpy array
-# data = asarray(image)
-# print('Image shape: {}'.format(data.shape))
 
 
 def get_depth_map(map_num):
@@ -68,41 +56,40 @@ def patch_extraction(im, chosen_size):
             count += 1
 
     print(f'patch index: {len(patch_index)}, patch values: {count}')
-    filtered_patches = np.array(filtered_patches)
+    # filtered_patches = np.array(filtered_patches)
     count = 0
     resized_patches = []
     scale_down = 32/chosen_size
 
     for patch in filtered_patches:
         count = count + 1
-        # Need to fix resize to retain tuple
         resize = cv2.resize(patch, None, fx=scale_down, fy=scale_down, interpolation=cv2.INTER_CUBIC)
 
         resized_patches.append(resize)
 
     print(f'No of patches: {count}')
 
-    # # create figure
-    # fig = plt.figure(figsize=(10, 7))
-    #
-    # # setting values to rows and column variables
-    # rows = 1
-    # columns = 2
-    #
-    # # Adds a subplot at the 1st position
-    # fig.add_subplot(rows, columns, 1)
-    # plt.imshow(filtered_patches[0])
-    # plt.title(f'{chosen_size}x{chosen_size}')
-    # plt.axis('off')
-    # # Adds a subplot at the 2nd position
-    # fig.add_subplot(rows, columns, 2)
-    # plt.imshow(resized_patches[0])
-    # plt.title('32x32')
-    # plt.axis('off')
-    # plt.show()
+    # create figure
+    fig = plt.figure(figsize=(10, 7))
+
+    # setting values to rows and column variables
+    rows = 1
+    columns = 2
+
+    # Adds a subplot at the 1st position
+    fig.add_subplot(rows, columns, 1)
+    plt.imshow(filtered_patches[0])
+    plt.title(f'{chosen_size}x{chosen_size}')
+    plt.axis('off')
+    # Adds a subplot at the 2nd position
+    fig.add_subplot(rows, columns, 2)
+    plt.imshow(resized_patches[0])
+    plt.title('32x32')
+    plt.axis('off')
+    plt.show()
 
     # Save the filtered patches
-    patch_file = 'patches/fromA0/' + patch_name
+    patch_file = 'patches/' + patch_name
     np.savez(patch_file, *resized_patches)
 
     # Show original image
@@ -121,28 +108,16 @@ def patch_extraction(im, chosen_size):
     # Rotate x-axis labels for better readability
     ax.set_xticklabels(x_ticks, rotation=45)
 
-    # Calculate the coordinates for the center of each grid cell
-    x_centers = [x + chosen_size / 2 for x in x_ticks]
-    y_centers = [y + chosen_size / 2 for y in y_ticks]
-
-    # Draw a red dot in the center of each grid cell - eventually for clustering visualisation
-    i = 0
-    for y in y_centers:
-        for x in x_centers:
-            if not patch_index[i] == (0, map_number):
-                ax.plot(x, y, 'ro', markersize=2)
-            i += 1
-
-
     # Add grid lines
     ax.grid()
     plt.title('Depth Map Patch Extraction')
     plt.xlabel('Pixels')
     plt.ylabel('Pixels')
-    plt.savefig(f'A0/MapNoosaArea{map_number}_w_Grid.png')
-    np.save(f'A0/MapNoosaArea{map_number}_Patch_Index', patch_index)
+    plt.savefig(f'DepthMaps/MapNoosaArea{map_number}_w_Grid.png')
+    np.save(f'DepthMaps/MapNoosaArea{map_number}_Patch_Index', patch_index)
     # plt.show()
 
+    # Show a sample of patches
     # load_patches = np.load(patch_file)
     #
     # # Show patches in a 10x10 grid
@@ -163,9 +138,10 @@ def patch_extraction(im, chosen_size):
 
 
 map_number = ['1-02', '1-03', '1-04', '1-05', '2-01', '2-02']
-map_number = map_number[5]
+map_number = map_number[0]  # Select a map to extract patches from
 # Load black and white image
-image = cv2.imread('A0/' + get_depth_map(map_number), cv2.IMREAD_GRAYSCALE)
-patch_name = f'Noosa{map_number}_patches_from_A0_320x320.npz'
+image = cv2.imread('DepthMaps/' + get_depth_map(map_number), cv2.IMREAD_GRAYSCALE)
+patch_name = f'Noosa{map_number}_patches.npz'
 
-patch_extraction(image, 320)
+# Extract patches from the input map at the chosen size
+patch_extraction(image, chosen_size=150)
