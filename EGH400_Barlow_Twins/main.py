@@ -520,10 +520,9 @@ def evaluation(model):
 
     # Save the array to a file
     np.save(f"{training_path}/selected_and_similar_patches.npy", selected_and_similar_patches)
-    # np.save(f"train/selected_and_similar_patches.npy", selected_and_similar_patches)
 
     patch_sim = f'{training_path}/PatchSim'
-    # patch_sim = f'train/PatchSim'
+    
     if not os.path.exists(patch_sim):
         os.makedirs(patch_sim)
 
@@ -630,7 +629,7 @@ def map_plot(map_number, labels_arr):
 
 
 # ---------------------------------MAIN------------------------------------------------
-# TODO: Import the patches from EGH400 Pre-Processing directory
+# Import the patches from EGH400 Pre-Processing directory
 # directory = '../EGH400_Pre_Processing/patches/fromA0/'
 # pattern = 'from_A0_320x320.npz'
 
@@ -688,9 +687,9 @@ ssl_ds = tf.data.Dataset.zip((ssl_ds_one, ssl_ds_two))
 # # plt.show()
 # plt.close()
 
-# TODO: Check what directories have already been trained, create new directory based on this
-training_path = f'train/LR_{lr}/LR_{lr}_EP_{epochs}'
-base_directory = f'train/LR_{lr}'
+# Check what directories have already been trained, create new directory based on this
+training_path = f'training/LR_{lr}_EP_{epochs}'
+base_directory = f'training'
 
 # Initialize an empty list to store existing directories
 existing_directories = []
@@ -715,8 +714,8 @@ for directory in existing_directories:
         # Handle cases where the directory name doesn't end with a number
         pass
 
-# TODO: Load existing model if there is one, otherwise train a new model
-model_dir = f'train/LR_{lr}/LR_{lr}_EP_{epochs}_1/bm_saved'
+# Load existing model if there is one, otherwise train a new model
+model_dir = f'training/LR_{lr}_EP_{epochs}_1/bm_saved'
 if model_exist(model_dir):
     # Model exist, load the model
     saved_model = load_model(model_dir)
