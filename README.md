@@ -36,7 +36,8 @@ Before using the code, make sure you have the following dependencies installed:
 
 3. Prepare your dataset or data. The code assumes a specific data format (e.g., 32x32 image patches) and a training/testing split. You may need to modify the data loading part to match your dataset format.
 
-4. Run main.py
+4. Run EGH400_Barlow_Twins/main.py
+Adjust the hyperparameters: lr, epochs, lambda_val and BATCH_SIZE.
 
 ## Results
 
